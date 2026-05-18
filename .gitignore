@@ -1,0 +1,6 @@
+# Ignore all Python compiled bytecode files
+*.pyc
+
+#ignore db files 
+Ecom.db
+
