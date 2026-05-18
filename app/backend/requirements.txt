@@ -1,0 +1,7 @@
+fastapi 0.136.1
+email-validator 2.3.0
+bcrypt 5.0.0
+pillow 12.2.0
+sqlalchemy 2.0.49
+pyjwt 2.12.1
+pymysql 1.1.3
