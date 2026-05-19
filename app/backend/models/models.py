@@ -1,7 +1,10 @@
-from database.database import base
-from sqlalchemy import Column,Integer,DateTime,Date,String,Boolean,func,Enum,ForeignKey,JSON,Float,UniqueConstraint
-from sqlalchemy.orm import relationship
 import enum
+
+from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Enum, Float,
+                        ForeignKey, Integer, String, UniqueConstraint, func)
+from sqlalchemy.orm import relationship
+
+from database.database import base
 
 
 class Timestampmixin:
@@ -112,11 +115,12 @@ class Products(base, Timestampmixin):
     category = relationship("Categories", back_populates="products")
     subCategory = relationship("Sub_Categories", back_populates="product")
     cartItem = relationship("Cart_Item", back_populates="product")
-    productAttribute = relationship("Product_Attribute", back_populates="product")
+    productAttribute = relationship(
+        "Product_Attribute",
+        back_populates="product")
     wishList = relationship("Wishlist", back_populates="product")
     stock = relationship("Product_Stock", back_populates="product")
     orderItems = relationship("Order_Items", back_populates="product")
-    images = relationship("Product_Images", back_populates="product")
     reviews = relationship("Reviews", back_populates="product")
 
 
@@ -244,14 +248,3 @@ class Reviews(base, Timestampmixin):
 
     user = relationship("Users", back_populates="reviews")
     product = relationship("Products", back_populates="reviews")
-
-
-class Product_Images(base, Timestampmixin):
-    __tablename__ = "product_images"
-
-    id = Column(Integer, primary_key=True, index=True)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    image_path = Column(String, nullable=False)
-    is_primary = Column(Boolean, default=False)
-
-    product = relationship("Products", back_populates="images")

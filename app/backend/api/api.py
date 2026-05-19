@@ -1,23 +1,31 @@
-from fastapi import Depends ,APIRouter,UploadFile,File,Form
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from utils.commonservices import getdb ,validate_contact,validate_username,hash_passwd,verify_password,complete_registration,process_images,validate_image_file
-from sqlalchemy.orm import Session 
-from models.models import Users ,Cart_Item,Addresses,Products,Cart,Product_Stock,Categories,Sub_Categories
-from typing import Annotated,Optional
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
 from database.database import engine
 from models import models
-from utils.token import verify_token,create_token
-from schemas.schemas import user_update_inputs , address_inputs ,addToCartInputs,address_update,registration_inputs,login_inputs,categoryInputs,SubcategoryInputs
-from datetime import datetime , date
-models.base.metadata.create_all(bind=engine)
-from sqlalchemy import and_
-from utils.commonservices  import process_images
+from models.models import (Addresses, Cart, Cart_Item, Categories,
+                           Product_Stock, Products, Sub_Categories, Users)
+from schemas.schemas import (SubcategoryInputs, address_inputs, address_update,
+                             addToCartInputs, categoryInputs, login_inputs,
+                             registration_inputs, user_update_inputs)
+from utils.commonservices import (complete_registration, get_current_user,
+                                  getdb, hash_passwd, process_images,
+                                  validate_contact, validate_image_file,
+                                  validate_username, verify_password)
+from utils.token import create_token
 
-router=APIRouter()
+models.base.metadata.create_all(bind=engine)
+
+
+router = APIRouter()
 
 max_image_size = 8 * 1024 * 1024
-countryList={
-        "India": [
+countryList = {
+    "India": [
         "Maharashtra",
         "Karnataka",
         "Tamil Nadu",
@@ -43,53 +51,65 @@ countryList={
     ]
 }
 
-#|---------------------------User API's------------------------------|
+# |---------------------------User API's------------------------------|
+
+
 @router.post('/signin')
-async def sign_in(db:Annotated[Session,Depends(getdb)],clsinput:registration_inputs):
-    inputs=Users(
-    first_name=clsinput.first_name,
-    last_name=clsinput.last_name,
-    user_name=clsinput.user_name,
-    email=clsinput.email,
-    contact=clsinput.contact,
-    hash_password=hash_passwd(clsinput.password),
-    DOB=clsinput.DOB
+async def sign_in(db: Annotated[Session, Depends(
+        getdb)], clsinput: registration_inputs):
+    inputs = Users(
+        first_name=clsinput.first_name,
+        last_name=clsinput.last_name,
+        user_name=clsinput.user_name,
+        email=clsinput.email,
+        contact=clsinput.contact,
+        hash_password=hash_passwd(clsinput.password),
+        DOB=clsinput.DOB
     )
-    result= complete_registration(email=clsinput.email,username=clsinput.user_name,contact=str(clsinput.contact),first_name=clsinput.first_name,last_name=clsinput.last_name,db=db)
-    if result=="Done":
+    result = complete_registration(
+        email=clsinput.email,
+        username=clsinput.user_name,
+        contact=str(
+            clsinput.contact),
+        first_name=clsinput.first_name,
+        last_name=clsinput.last_name,
+        db=db)
+    if result == "Done":
         db.add(inputs)
         db.commit()
         db.refresh(inputs)
-        return   {"Msg": f"{clsinput.user_name} registered!"}
-    return  result 
+        return {"Msg": f"{clsinput.user_name} registered!"}
+    return result
 
 
 @router.post('/login')
-def log_in(db:Annotated[Session,Depends(getdb)],clsinput:login_inputs):
-    username=clsinput.user_name
-    password=clsinput.password
-    email=clsinput.email
-    result=verify_password(password=password,username=username,email=email,db=db)
+def log_in(db: Annotated[Session, Depends(getdb)], clsinput: login_inputs):
+    username = clsinput.user_name
+    password = clsinput.password
+    email = clsinput.email
+    result = verify_password(
+        password=password,
+        username=username,
+        email=email,
+        db=db)
 
-
-    if result==None:
-        token=create_token(username,email)
-        return {"Msg":"Logged In!",
-                "token":token}
+    if result is None:
+        token = create_token(username, email)
+        return {"Msg": "Logged In!",
+                "token": token}
     return result
 
 
 @router.get('/profile/{token}')
-def getUser(token:str,db:Annotated[Session,Depends(getdb)]):
-    info=verify_token(token)
-    u_info=info["sub"]
-    email=u_info.split("+")[1]
-    user=db.query(Users).filter(Users.email==email).first()
-    return{"Username":user.user_name,
-           "Contact":user.contact,
-           "User_id":user.id,
-           "First_name":user.first_name,
-           "Last_name":user.last_name}
+def getUser(token: str, db: Annotated[Session, Depends(getdb)]):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    return {"Username": user.user_name,
+            "Contact": user.contact,
+            "User_id": user.id,
+            "First_name": user.first_name,
+            "Last_name": user.last_name}
 
 
 @router.put('/update/{token}')
@@ -98,12 +118,10 @@ def updateUser(
     db: Annotated[Session, Depends(getdb)],
     clsinput: user_update_inputs
 ):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user=db.query(Users).filter(Users.email==email).first()
+    user = get_current_user(token=token, db=db)
 
     if not user:
-        return {"msg": "User not found"}
+        raise HTTPException(status_code=404, detail="USer not Found")
 
     if clsinput.user_name is not None:
         existing_user = db.query(Users).filter(
@@ -140,16 +158,17 @@ def updateUser(
     return {"msg": "User updated successfully"}
 
 
-#|--------------------------------Addresses API's------------------------------------|
+# |--------------------------------Addresses API's------------------------------------|
 
 
 @router.post('/add_Address/{token}')
-def add_address(token:str,db:Annotated[Session,Depends(getdb)],clsinput:address_inputs):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user_id=db.query(Users).filter(Users.email==email).first().id
-    user_inputs=Addresses(
-        user_id=user_id,
+def add_address(token: str, db: Annotated[Session, Depends(
+        getdb)], clsinput: address_inputs):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    user_inputs = Addresses(
+        user_id=user.id,
         street=clsinput.Street,
         city=clsinput.City,
         state=clsinput.State,
@@ -161,24 +180,27 @@ def add_address(token:str,db:Annotated[Session,Depends(getdb)],clsinput:address_
         landmark=clsinput.landmark
     )
     if not clsinput.Country in countryList.keys():
-        return {"Msg":"Enter a valid Country name"}
-    
+        return {"Msg": "Enter a valid Country name"}
+
     if not clsinput.State in countryList[clsinput.Country]:
-        return {"Msg":"Enetr a valid State name"}
-    
+        return {"Msg": "Enetr a valid State name"}
+
     db.add(user_inputs)
     db.commit()
     db.refresh(user_inputs)
-    return {"Msg":"Address added!"}
+    return {"Msg": "Address added!"}
 
 
 @router.get('/Addresses/{token}')
-def get_address(token:str,db:Annotated[Session,Depends(getdb)]):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user_id=db.query(Users).filter(Users.email==email).first().id
-    result=db.query(Addresses).filter(and_(Addresses.user_id==user_id,Addresses.is_deleted==False)).all()
-    return {"Addresses":result}
+def get_address(token: str, db: Annotated[Session, Depends(getdb)]):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    result = db.query(Addresses).filter(
+        and_(
+            Addresses.user_id == user.id,
+            Addresses.is_deleted == False)).all()
+    return {"Addresses": result}
 
 
 @router.put('/UpdateAddress/{token}/{id}')
@@ -188,10 +210,9 @@ def updateAddress(
     db: Annotated[Session, Depends(getdb)],
     clsinput: address_update
 ):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user=db.query(Users).filter(Users.email==email).first()
-
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
     address = db.query(Addresses).filter(
         Addresses.id == id,
         Addresses.user_id == user.id,
@@ -246,58 +267,65 @@ def updateAddress(
 
 
 @router.put('/deleteAddress/{token}/{id}')
-def deleteAddress(token:str,id:int,db:Annotated[Session,Depends(getdb)]):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user_id=db.query(Users).filter(Users.email==email).first().id
-    address=db.query(Addresses).filter(and_(Addresses.id==id , Addresses.user_id==user_id)).first()
+def deleteAddress(token: str, id: int, db: Annotated[Session, Depends(getdb)]):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    address = db.query(Addresses).filter(
+        and_(Addresses.id == id, Addresses.user_id == user.id)).first()
     if address:
-        address.is_deleted=True
+        address.is_deleted = True
     db.commit()
-    return {"Msg":"Address removed"}
+    return {"Msg": "Address removed"}
 
 
-#|-----------------------------Categories API's--------------------------------|
+# |-----------------------------Categories API's--------------------------------|
 
 
 @router.post("/addCategories/")
-def addCategories(db:Annotated[Session,Depends(getdb)],clsinput:categoryInputs):
-    categoryInput=Categories(
+def addCategories(db: Annotated[Session, Depends(
+        getdb)], clsinput: categoryInputs):
+    categoryInput = Categories(
         name=clsinput.name,
         description=clsinput.description
     )
-    alreadyExist=bool(db.query(Categories).filter(Categories.name==clsinput.name).first())
+    alreadyExist = bool(db.query(Categories).filter(
+        Categories.name == clsinput.name).first())
     if alreadyExist is False:
         db.add(categoryInput)
         db.commit()
         db.refresh(categoryInput)
-        return {"msg":"Category Added"}
+        return {"msg": "Category Added"}
     else:
-        return {"msg":"category already exsist"}
-    
-       
-@router.post('/addSubcategories/')
-def addSubcategory(db:Annotated[Session,Depends(getdb)],clsinput:SubcategoryInputs):
-    category_id=db.query(Categories).filter(Categories.name==clsinput.parentName).first()
-    if category_id is  None:
-        return {"msg":'Enter a valid Category Name'}
+        return {"msg": "category already exsist"}
 
-    subCategoryinput=Sub_Categories(
+
+@router.post('/addSubcategories/')
+def addSubcategory(db: Annotated[Session, Depends(
+        getdb)], clsinput: SubcategoryInputs):
+    category_id = db.query(Categories).filter(
+        Categories.name == clsinput.parentName).first()
+    if category_id is None:
+        return {"msg": 'Enter a valid Category Name'}
+
+    subCategoryinput = Sub_Categories(
         name=clsinput.name,
         parent_id=category_id.id,
         description=clsinput.description
     )
 
-    alreadyExistsub=bool(db.query(Sub_Categories).filter(Sub_Categories.name==clsinput.name).first())
+    alreadyExistsub = bool(
+        db.query(Sub_Categories).filter(
+            Sub_Categories.name == clsinput.name).first())
     if alreadyExistsub:
-        return {"Msg":"Sub category already exsist"}
+        return {"Msg": "Sub category already exsist"}
     else:
         db.add(subCategoryinput)
         db.commit()
         db.refresh(subCategoryinput)
-        return {"Msg":"Subcategory and Category added"}
+        return {"Msg": "Subcategory and Category added"}
 
-#|-------------------------------Product API's------------------------------------|
+# |-------------------------------Product API's------------------------------------|
 
 
 @router.post("/addProducts/")
@@ -505,6 +533,7 @@ def removeProduct(
 
     return {"msg": "Product removed"}
 
+
 @router.get("/products/category/{category_name}")
 def getProductsByCategory(
     category_name: str,
@@ -525,7 +554,7 @@ def getProductsByCategory(
     return {"data": products}
 
 
-#|----------------------------------Admin Product API's-------------------------------|
+# |----------------------------------Admin Product API's-------------------------------|
 
 
 @router.get("/admin/getProducts/")
@@ -557,28 +586,34 @@ def getProductDetails(
     return {"data": product}
 
 
-#|-------------------------------------------Cart API's---------------------------------|
+# |-------------------------------------------Cart API's---------------------------------|
 
 
 @router.post("/addToCart/{token}/{product_id}")
-def addToCart(token:str,product_id:int,quantity:int,db:Annotated[Session,Depends(getdb)],clsinput:addToCartInputs):
-    info=verify_token(token)
-    email=info["sub"].split("+")[1]
-    user=db.query(Users).filter(Users.email==email).first()
-    product=db.query(Products).filter(and_(Products.id==product_id,Products.is_deleted==False)).first()
-    product_stock=db.query(Product_Stock).filter(and_(Product_Stock.product_id==product_id,Product_Stock.is_deleted==False)).first()
+def addToCart(token: str, product_id: int, quantity: int,
+              db: Annotated[Session, Depends(getdb)], clsinput: addToCartInputs):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    product = db.query(Products).filter(
+        and_(
+            Products.id == product_id,
+            Products.is_deleted == False)).first()
+    product_stock = db.query(Product_Stock).filter(
+        and_(
+            Product_Stock.product_id == product_id,
+            Product_Stock.is_deleted == False)).first()
     if not product:
-        return {"Msg":"Product not found"}
-    
+        return {"Msg": "Product not found"}
 
-    cart=db.query(Cart).filter(Cart.user_id==user.id).first()
+    cart = db.query(Cart).filter(Cart.user_id == user.id).first()
     if not cart:
         cart = Cart(user_id=user.id, total=0)
         db.add(cart)
         db.commit()
         db.refresh(cart)
 
-    cart_item=Cart_Item(
+    cart_item = Cart_Item(
         cart_id=cart.id,
         product_id=product.id,
         quantity=clsinput.quantity,
@@ -589,9 +624,44 @@ def addToCart(token:str,product_id:int,quantity:int,db:Annotated[Session,Depends
     db.add(cart_item)
     db.commit()
     db.refresh(cart_item)
-    return {"Msg":"Product added to cart!"}
-    
-@router.put('/updateCart')
-def cartUpdate(db:Annotated[Session,Depends(getdb)]):
-  
-  return None
+    return {"Msg": "Product added to cart!"}
+
+
+@router.get('/getCart/{token}')
+def getCart(token: str, db: Annotated[Session, Depends(getdb)]):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    cart = db.query(Cart).filter(Cart.user_id == user.id).first()
+    cart_Items = db.query(Cart_Item).filter(
+        and_(
+            Cart_Item.is_deleted == False,
+            Cart_Item.cart_id == cart.id)).all()
+    return {"items": cart_Items}
+
+
+@router.put('/updateCart/{cart_item_id}/{token}')
+def cartUpdate(cart_item_id: int, token: str,
+               db: Annotated[Session, Depends(getdb)], quantity: int = Form(...)):
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="USer not Found")
+    cart_item = db.query(Cart_Item).filter(
+        Cart_Item.id == cart_item_id,
+        Cart.user_id == user.id).first()
+    if not cart_item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if quantity > Cart_Item.productStock.quantity:
+        raise HTTPException(status_code=409, detail="Insufficient Stock")
+    cart_item.quantity = quantity
+    cart = cart_item.cart
+    items = db.query(Cart_Item).filter(
+        and_(
+            Cart_Item.cart_id == cart.id,
+            Cart_Item.is_deleted == False)).all()
+    cart.total = sum(
+        item.quantity *
+        items.productStock.price for item in items)
+    db.commit()
+    return {"Msg": "Cart updated",
+            "Cart Total :": cart.total}
