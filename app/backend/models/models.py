@@ -51,7 +51,7 @@ class Users(base, Timestampmixin):
     DOB = Column(Date)
     role = Column(Enum(UserRole), default=UserRole.CUSTOMER)
 
-    address = relationship("Addresses", back_populates="user")
+    addresses = relationship("Addresses", back_populates="user")
     wishList = relationship("Wishlist", back_populates="user")
     cart = relationship("Cart", back_populates="user", uselist=False)
     orders = relationship("Orders", back_populates="user")
@@ -62,7 +62,7 @@ class Addresses(base, Timestampmixin):
     __tablename__ = "addresses"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     address_line_1 = Column(String)
     address_line_2 = Column(String)
     district = Column(String)
@@ -73,7 +73,7 @@ class Addresses(base, Timestampmixin):
     country = Column(String)
     postal_code = Column(String)
 
-    user = relationship("Users", back_populates="address")
+    user = relationship("Users", back_populates="addresses")
     orders = relationship("Orders", back_populates="shipping_address")
 
 
