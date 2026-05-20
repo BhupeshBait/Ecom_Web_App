@@ -65,3 +65,16 @@ class SubcategoryInputs(BaseModel):
 
 class addToCartInputs(BaseModel):
     quantity: int
+
+
+class stock_inputs(BaseModel):
+    product_id: int
+    sku_id: str
+    price: float
+    quantity: int
+
+
+class stock_update_inputs(BaseModel):
+    sku_id: str | None = None
+    price: float | None = None
+    quantity: int | None = None
