@@ -4,10 +4,14 @@
 # ignore db files 
 Ecom.db
 test.db
+Ecomdb
 
 # Ignore test directory
 tests/
 
 # Ignore pytest configuration
 pytest.ini
+
+uploads/
+
 
