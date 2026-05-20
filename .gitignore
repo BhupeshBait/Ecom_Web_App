@@ -1,6 +1,13 @@
 # Ignore all Python compiled bytecode files
 *.pyc
 
-#ignore db files 
+# ignore db files 
 Ecom.db
+test.db
+
+# Ignore test directory
+tests/
+
+# Ignore pytest configuration
+pytest.ini
 
