@@ -78,3 +78,17 @@ class stock_update_inputs(BaseModel):
     sku_id: str | None = None
     price: float | None = None
     quantity: int | None = None
+
+
+class order_create_inputs(BaseModel):
+    address_id: int
+    payment_method: str
+
+
+class order_status_update_inputs(BaseModel):
+    status: str
+    tracking_number: str | None = None
+
+
+class order_cancel_inputs(BaseModel):
+    reason: str | None = None
