@@ -52,11 +52,10 @@ class Users(base, Timestampmixin):
     role = Column(Enum(UserRole), default=UserRole.CUSTOMER)
 
     addresses = relationship("Addresses", back_populates="user")
-    wishList = relationship("Wishlist", back_populates="user")
     cart = relationship("Cart", back_populates="user", uselist=False)
     orders = relationship("Orders", back_populates="user")
     reviews = relationship("Reviews", back_populates="user")
-
+    orderItems = relationship("Order_Items", back_populates="user")
 
 class Addresses(base, Timestampmixin):
     __tablename__ = "addresses"
@@ -118,7 +117,6 @@ class Products(base, Timestampmixin):
     productAttribute = relationship(
         "Product_Attribute",
         back_populates="product")
-    wishList = relationship("Wishlist", back_populates="product")
     stock = relationship("Product_Stock", back_populates="product")
     orderItems = relationship("Order_Items", back_populates="product")
     reviews = relationship("Reviews", back_populates="product")
@@ -148,17 +146,6 @@ class Product_Stock(base, Timestampmixin):
     cartItem = relationship("Cart_Item", back_populates="productStock")
     orderItems = relationship("Order_Items", back_populates="productStock")
 
-
-class Wishlist(base, Timestampmixin):
-    __tablename__ = "wishlist"
-    __table_args__ = (UniqueConstraint("user_id", "product_id"),)
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    product_id = Column(Integer, ForeignKey("products.id"))
-
-    user = relationship("Users", back_populates="wishList")
-    product = relationship("Products", back_populates="wishList")
 
 
 class Cart(base, Timestampmixin):
@@ -193,6 +180,8 @@ class Orders(base, Timestampmixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     order_number = Column(String, unique=True, nullable=False, index=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING)
+    reason=Column(String,nullable=True)
+    order_item_id=Column(Integer, ForeignKey("order_items.id"))
     total_amount = Column(Float, nullable=False)
     shipping_charge = Column(Float, default=0)
     tax_amount = Column(Float, default=0)
@@ -210,13 +199,14 @@ class Order_Items(base, Timestampmixin):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    user_id=Column(Integer, ForeignKey("users.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_stock_id = Column(Integer, ForeignKey("product_stock.id"))
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
 
+    user=relationship("Users", back_populates="orders")
     order = relationship("Orders", back_populates="orderItems")
     product = relationship("Products", back_populates="orderItems")
     productStock = relationship("Product_Stock", back_populates="orderItems")
