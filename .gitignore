@@ -1,0 +1,7 @@
+tests/
+venv/
+*.db
+*.ini
+*.pyc
+__pycache__/
+uploads/
