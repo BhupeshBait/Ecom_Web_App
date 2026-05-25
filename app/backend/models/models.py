@@ -21,7 +21,7 @@ class UserRole(str, enum.Enum):
 
 class OrderStatus(str, enum.Enum):
     PENDING = "pending"
-    PAID = "paid"
+    PROCESSING = "processing"
     SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELED = "canceled"
@@ -181,13 +181,13 @@ class Orders(base, Timestampmixin):
     order_number = Column(String, unique=True, nullable=False, index=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING)
     reason=Column(String,nullable=True)
-    order_item_id=Column(Integer, ForeignKey("order_items.id"))
     total_amount = Column(Float, nullable=False)
     shipping_charge = Column(Float, default=0)
     tax_amount = Column(Float, default=0)
     discount_amount = Column(Float, default=0)
     final_amount = Column(Float, nullable=False)
     shipping_address_id = Column(Integer, ForeignKey("addresses.id"))
+    tracking_number = Column(String, nullable=True)
 
     user = relationship("Users", back_populates="orders")
     shipping_address = relationship("Addresses", back_populates="orders")
@@ -200,13 +200,14 @@ class Order_Items(base, Timestampmixin):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id=Column(Integer, ForeignKey("users.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_stock_id = Column(Integer, ForeignKey("product_stock.id"))
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
 
-    user=relationship("Users", back_populates="orders")
+    user=relationship("Users", back_populates="orderItems")
     order = relationship("Orders", back_populates="orderItems")
     product = relationship("Products", back_populates="orderItems")
     productStock = relationship("Product_Stock", back_populates="orderItems")
