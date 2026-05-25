@@ -42,7 +42,7 @@ def adv_validation(email: str):
         return False
 
 
-def check_user_exists(email: str | NotImplementedError,
+def check_user_exists(email: str | None,
                       username: str | None, db):
     user = (
         db.query(Users)
@@ -59,7 +59,7 @@ def check_user_exists(email: str | NotImplementedError,
 
 
 def hash_passwd(passwd):
-    return bcrypt.hashpw(passwd.encode(), bcrypt.gensalt(rounds=12))
+    return bcrypt.hashpw(passwd.encode(), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 
 def name_validation(name):
@@ -112,66 +112,168 @@ def complete_registration(
 
 def verify_password(password: str, username: str, email: str, db):
     if check_user_exists(email, username, db) is None:
-        return {"Msg": "Incoorect Username or email"}
+        return {"Msg": "Incorrect Username or email"}
     result = db.query(Users).filter(Users.user_name == username).first()
 
     if result is None:
         return {"Msg": "Incorrect Username or email"}
 
-    hash_passwd = bcrypt.checkpw(password.encode(), result.hash_password)
+    hash_passwd = bcrypt.checkpw(password.encode(), result.hash_password.encode('utf-8'))
     if hash_passwd:
         return None
     return {"Msg": "Incorrect Password!"}
 
 
 def process_images(content: bytes, type: str | None = None) -> dict:
-    with Image.open(BytesIO(content)) as original:
-        img = ImageOps.exif_transpose(original)
-        if type == "hero":
-            img = ImageOps.fit(
-                img, (1280, 720), method=Image.Resampling.LANCZOS)
-        else:
-            img = ImageOps.fit(
-                img, (1024, 600), method=Image.Resampling.LANCZOS)
+    try:
+        with Image.open(BytesIO(content)) as original:
+            img = ImageOps.exif_transpose(original)
+            
+            if type == "hero":
+                img = ImageOps.fit(
+                    img, (1280, 720), method=Image.Resampling.LANCZOS)
+            else:
+                img = ImageOps.fit(
+                    img, (1024, 600), method=Image.Resampling.LANCZOS)
+                
+            if img.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
 
-        if img.mode in ("RGBA", "LA", "P"):
-            img = img.convert("RGB")
+            filename = f"{uuid.uuid4().hex}.jpg"
+            
+            if type == "hero":
+                filepath = hero_dir / filename
+            else:
+                filepath = cover_dir / filename
 
-        filename = f"{uuid.uuid4().hex}.jpg"
-        if type == "hero":
-            filepath = hero_dir / filename
-        else:
-            filepath = cover_dir / filename
+            if type == "hero":
+                hero_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                cover_dir.mkdir(parents=True, exist_ok=True)
 
-        if type == "hero":
-            hero_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            cover_dir.mkdir(parents=True, exist_ok=True)
+            img.save(filepath, "JPEG", quality=90, optimize=True)
+            
+            return {
+                "FileName": filename, 
+                "FilePath": str(filepath)  
+            }
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image processing failed: {str(e)}"
+        )
 
-        img.save(filepath, "JPEG", quality=90, optimize=True)
-
-    return {"FileName": filename, "FilePath": filepath}
 
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
-
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_FILE_SIZE = 8 * 1024 * 1024  
+MIN_FILE_SIZE = 10 * 1024  
+MAX_IMAGE_WIDTH = 10000  
+MAX_IMAGE_HEIGHT = 10000  
+MIN_IMAGE_WIDTH = 100  
+MIN_IMAGE_HEIGHT = 100  
+
+
+def sanitize_filename(filename: str) -> str:
+    filename = Path(filename).name
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '', filename)
+    if len(filename) > 255:
+        name, ext = Path(filename).stem, Path(filename).suffix
+        filename = name[:250] + ext
+    
+    return filename
 
 
 def validate_image_file(file: UploadFile):
     if file is None:
         return
 
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
+    if not file.filename:
         raise HTTPException(
-            status_code=400, detail=f"{file.filename} is not a valid image file"
+            status_code=400, 
+            detail="Filename is required"
         )
 
-    filename = file.filename.lower()
-
-    if not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+    filename = file.filename.lower().strip()
+    file_ext = Path(filename).suffix.lower()
+    
+    if not file_ext:
         raise HTTPException(
-            status_code=400, detail=f"{file.filename} has invalid extension"
+            status_code=400, 
+            detail=f"File '{file.filename}' has no extension. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Extension '{file_ext}' not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type '{file.content_type}' not supported. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
+        )
+    if file.size:
+        if file.size > MAX_FILE_SIZE:
+            size_mb = MAX_FILE_SIZE / (1024 * 1024)
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File size ({file.size / (1024*1024):.1f}MB) exceeds maximum allowed size of {size_mb:.0f}MB"
+            )
+        
+        if file.size < MIN_FILE_SIZE:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File size ({file.size / 1024:.1f}KB) is too small. Minimum: {MIN_FILE_SIZE / 1024:.0f}KB"
+            )
+
+    try:
+        file.file.seek(0)  
+        image_content = file.file.read()
+        
+        with Image.open(BytesIO(image_content)) as img:
+            width, height = img.size
+            
+            if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Image dimensions ({width}x{height}px) too small. Minimum: {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px"
+                )
+            
+            if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Image dimensions ({width}x{height}px) too large. Maximum: {MAX_IMAGE_WIDTH}x{MAX_IMAGE_HEIGHT}px"
+                )
+            
+            img_format = img.format.lower() if img.format else None
+            if img_format not in ["jpeg", "png", "webp"]:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Image format '{img_format}' not supported. Supported: JPEG, PNG, WebP"
+                )
+        
+        file.file.seek(0)  
+        
+    except Exception as e:
+        if "Image" in str(type(e)):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File '{file.filename}' is not a valid image file"
+            )
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Image validation failed: {str(e)}"
         )
 
 
