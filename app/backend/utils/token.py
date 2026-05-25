@@ -1,10 +1,11 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from functools import wraps
 
 import jwt
 
 SECRET_KEY = "Bhup123@133"
 algorithm = "HS256"
+TOKEN_EXPIRATION_MINUTES = 30
 
 
 def create_token(username, email):
@@ -12,7 +13,7 @@ def create_token(username, email):
     jwtobj = {
         "iss": "Tech_comm",
         "sub": userinfo,
-        "exp": datetime.now() + timedelta(minutes=30),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRATION_MINUTES),
         "iat": int(datetime.now().timestamp()),
     }
 
@@ -21,5 +22,10 @@ def create_token(username, email):
 
 
 def verify_token(token):
-    decode_obj = jwt.decode(token, SECRET_KEY, algorithms=algorithm)
-    return decode_obj
+    try:
+        decode_obj = jwt.decode(token, SECRET_KEY, algorithms=[algorithm])
+        return decode_obj
+    except jwt.ExpiredSignatureError:
+        raise jwt.InvalidTokenError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise jwt.InvalidTokenError("Invalid token")
