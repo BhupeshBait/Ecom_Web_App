@@ -336,7 +336,7 @@ def addStock(token: str, db: Annotated[Session, Depends(getdb)], clsinput: stock
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     
-    if user.role != "ADMIN":
+    if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can add stock")
     
     product = db.query(Products).filter(
@@ -382,7 +382,7 @@ def updateStock(
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     
-    if user.role != "ADMIN":
+    if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update stock")
     
     stock = db.query(Product_Stock).filter(
@@ -426,7 +426,7 @@ def getStock(product_id: int,token:str, db: Annotated[Session, Depends(getdb)]):
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     
-    if user.role != "ADMIN":
+    if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins are allowed to get stock details")
     product = db.query(Products).filter(
         and_(
@@ -454,7 +454,7 @@ def deleteStock(product_stock_id: int, token: str, db: Annotated[Session, Depend
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     
-    if user.role != "ADMIN":
+    if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete stock")
     
     stock = db.query(Product_Stock).filter(
@@ -479,6 +479,7 @@ def deleteStock(product_stock_id: int, token: str, db: Annotated[Session, Depend
 
 @router.post("/add/products")
 async def addProducts(
+    token: str,
     db: Annotated[Session, Depends(getdb)],
     name: str = Form(...),
     description: str = Form(...),
@@ -491,73 +492,88 @@ async def addProducts(
     hero_image_3: UploadFile = File(...),
     hero_image_4: UploadFile = File(...)
 ):
-    hero_path = {}
-
-    hero_images = [
-        hero_image_1,
-        hero_image_2,
-        hero_image_3,
-        hero_image_4
-    ]
-
-    validate_image_file(cover_image)
-
-    for image in hero_images:
-        validate_image_file(image)
-
-    category_obj = db.query(Categories).filter(
-        Categories.name == category
-    ).first()
-
-    if category_obj is None:
-        return {"msg": "Enter valid category"}
-
-    subcategory_obj = None
-
-    if subcategory:
-        subcategory_obj = db.query(Sub_Categories).filter(
-            Sub_Categories.name == subcategory
+    user = get_current_user(token=token, db=db)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not Found")
+    
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can add products")
+    
+    try:
+        category_obj = db.query(Categories).filter(
+            Categories.name == category
         ).first()
 
-        if subcategory_obj is None:
-            return {"msg": "Enter valid subcategory"}
+        if category_obj is None:
+            raise HTTPException(status_code=400, detail=f"Category '{category}' not found")
 
-    for i, image in enumerate(hero_images, start=1):
-        content = await image.read()
+        subcategory_obj = None
 
-        result = await run_in_threadpool(
+        if subcategory:
+            subcategory_obj = db.query(Sub_Categories).filter(
+                Sub_Categories.name == subcategory
+            ).first()
+
+            if subcategory_obj is None:
+                raise HTTPException(status_code=400, detail=f"Subcategory '{subcategory}' not found")
+
+        validate_image_file(cover_image)
+        
+        hero_images = [
+            hero_image_1,
+            hero_image_2,
+            hero_image_3,
+            hero_image_4
+        ]
+        
+        for idx, image in enumerate(hero_images, start=1):
+            validate_image_file(image)
+
+        cover_content = await cover_image.read()
+        cover_result = await run_in_threadpool(
             process_images,
-            content,
-            "hero"
+            cover_content
         )
 
-        hero_path[f"hero_{i}"] = str(result["FilePath"])
+        hero_path = {}
+        for i, image in enumerate(hero_images, start=1):
+            content = await image.read()
 
-    cover_content = await cover_image.read()
+            result = await run_in_threadpool(
+                process_images,
+                content,
+                "hero"
+            )
 
-    cover_result = await run_in_threadpool(
-        process_images,
-        cover_content
-    )
+            hero_path[f"hero_{i}"] = str(result["FilePath"])
 
-    product = Products(
-        name=name,
-        description=description,
-        summary=summary,
-        category_id=category_obj.id,
-        sub_category_id=subcategory_obj.id if subcategory_obj else None,
-        cover_img_path=str(cover_result["FilePath"]),
-        hero_path=hero_path
-    )
+        product = Products(
+            name=name,
+            description=description,
+            summary=summary,
+            category_id=category_obj.id,
+            sub_category_id=subcategory_obj.id if subcategory_obj else None,
+            cover_img_path=str(cover_result["FilePath"]),
+            hero_path=hero_path
+        )
 
-    db.add(product)
-    db.commit()
-    db.refresh(product)
+        db.add(product)
+        db.commit()
+        db.refresh(product)
 
-    return {
-        "msg": "Product added successfully",
-        "product_id": product.id
-    }
+        return {
+            "msg": "Product added successfully",
+            "product_id": product.id
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error adding product: {str(e)}"
+        )
 
 
 @router.put("/update/products/{id}")
@@ -575,91 +591,101 @@ async def updateProducts(
     hero_image_3: Optional[UploadFile] = File(None),
     hero_image_4: Optional[UploadFile] = File(None)
 ):
-    product = db.query(Products).filter(
-        Products.id == id,
-        Products.is_deleted == False
-    ).first()
+    try:
+        product = db.query(Products).filter(
+            Products.id == id,
+            Products.is_deleted == False
+        ).first()
 
-    if not product:
-        return {"msg": "Product not found"}
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
 
-    hero_images = [
-        hero_image_1,
-        hero_image_2,
-        hero_image_3,
-        hero_image_4
-    ]
+        hero_images = [
+            hero_image_1,
+            hero_image_2,
+            hero_image_3,
+            hero_image_4
+        ]
 
-    updated_hero_path = {}
+        updated_hero_path = {}
 
-    for i, image in enumerate(hero_images, start=1):
-        if image is not None:
-            validate_image_file(image)
+        for i, image in enumerate(hero_images, start=1):
+            if image is not None:
+                validate_image_file(image)
 
-            content = await image.read()
+                content = await image.read()
+
+                result = await run_in_threadpool(
+                    process_images,
+                    content,
+                    "hero"
+                )
+
+                updated_hero_path[f"hero_{i}"] = str(
+                    result["FilePath"]
+                )
+
+        if cover_image is not None:
+            validate_image_file(cover_image)
+
+            cover_content = await cover_image.read()
 
             result = await run_in_threadpool(
                 process_images,
-                content,
-                "hero"
+                cover_content
             )
 
-            updated_hero_path[f"hero_{i}"] = str(
+        product.cover_img_path = str(
                 result["FilePath"]
             )
 
-    if cover_image is not None:
-        validate_image_file(cover_image)
+        if name is not None:
+            product.name = name
 
-        cover_content = await cover_image.read()
+        if description is not None:
+            product.description = description
 
-        result = await run_in_threadpool(
-            process_images,
-            cover_content
+        if summary is not None:
+            product.summary = summary
+
+        if category is not None:
+            category_obj = db.query(Categories).filter(
+                Categories.name == category
+            ).first()
+
+            if not category_obj:
+                raise HTTPException(status_code=400, detail="Invalid category")
+
+            product.category_id = category_obj.id
+
+        if subcategory is not None:
+            subcategory_obj = db.query(Sub_Categories).filter(
+                Sub_Categories.name == subcategory
+            ).first()
+
+            if not subcategory_obj:
+                raise HTTPException(status_code=400, detail="Invalid subcategory")
+
+            product.sub_category_id = subcategory_obj.id
+
+        if product.hero_path is None:
+            product.hero_path = {}
+
+        product.hero_path.update(updated_hero_path)
+
+        db.commit()
+        db.refresh(product)
+
+        return {"msg": "Product updated successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error updating product: {str(e)}"
         )
-
-        product.cover_img_path = str(
-            result["FilePath"]
-        )
-
-    if name is not None:
-        product.name = name
-
-    if description is not None:
-        product.description = description
-
-    if summary is not None:
-        product.summary = summary
-
-    if category is not None:
-        category_obj = db.query(Categories).filter(
-            Categories.name == category
-        ).first()
-
-        if not category_obj:
-            return {"msg": "Invalid category"}
-
-        product.category_id = category_obj.id
-
-    if subcategory is not None:
-        subcategory_obj = db.query(Sub_Categories).filter(
-            Sub_Categories.name == subcategory
-        ).first()
-
-        if not subcategory_obj:
-            return {"msg": "Invalid subcategory"}
-
-        product.sub_category_id = subcategory_obj.id
-
-    if product.hero_path is None:
-        product.hero_path = {}
-
-    product.hero_path.update(updated_hero_path)
-
-    db.commit()
-    db.refresh(product)
-
-    return {"msg": "Product updated successfully"}
 
 
 @router.put("/removeProduct/{id}")
@@ -990,7 +1016,7 @@ def getOrderDetails(order_id: int, token: str, db: Annotated[Session, Depends(ge
     
     order_items = db.query(Order_Items).filter(
         and_(
-            Order_Items.id == order.id,
+            Order_Items.order_id == order.id,
             Order_Items.is_deleted == False
         )
     ).all()
@@ -1036,7 +1062,7 @@ def updateOrderStatus(order_id: int, token: str, db: Annotated[Session, Depends(
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     
-    if user.role != "ADMIN":
+    if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update order status")
     
     order = db.query(Orders).filter(
@@ -1099,7 +1125,7 @@ def cancelOrder(order_id: int, token: str, db: Annotated[Session, Depends(getdb)
     
     order_items = db.query(Order_Items).filter(
         and_(
-            Order_Items.id == order.id,
+            Order_Items.order_id == order.id,
             Order_Items.is_deleted == False
         )
     ).all()
