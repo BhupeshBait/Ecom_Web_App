@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -15,15 +15,42 @@ from schemas.schemas import (SubcategoryInputs, address_inputs, address_update,
                              registration_inputs, stock_inputs, stock_update_inputs,
                              user_update_inputs, order_create_inputs, order_status_update_inputs, order_cancel_inputs)
 from utils.commonservices import (complete_registration, get_current_user,
-                                  getdb, hash_passwd, process_images,
-                                  validate_contact, validate_image_file,
-                                  validate_username, verify_password)
+                                  get_token_from_header, getdb, hash_passwd,
+                                  process_images, validate_contact,
+                                  validate_image_file, validate_username,
+                                  verify_password)
 from utils.token import create_token
 
 models.base.metadata.create_all(bind=engine)
 
 
 router = APIRouter()
+
+
+def build_image_url(relative_path: str, request: Request) -> str:
+    path = relative_path.replace("\\", "/")
+    if path.startswith("uploads/"):
+        path = path[len("uploads/"):]
+    return str(request.url_for("uploads", path=path))
+
+
+def serialize_product(product: Products, request: Request) -> dict:
+    hero_urls = {}
+    for key, value in (product.hero_path or {}).items():
+        hero_urls[key] = build_image_url(value, request) if value else None
+
+    return {
+        "id": product.id,
+        "name": product.name,
+        "summary": product.summary,
+        "description": product.description,
+        "category": product.category.name if product.category else None,
+        "subcategory": product.subCategory.name if product.subCategory else None,
+        "cover_image_url": build_image_url(product.cover_img_path, request) if product.cover_img_path else None,
+        "hero_image_urls": hero_urls,
+        "created_at": product.created_at,
+        "updated_at": product.updated_at,
+    }
 
 max_image_size = 8 * 1024 * 1024
 countryList = {
@@ -80,7 +107,7 @@ async def sign_in(db: Annotated[Session, Depends(
         db.add(inputs)
         db.commit()
         db.refresh(inputs)
-        return {"Msg": f"{clsinput.user_name} registered!"}
+        return {"message": f"{clsinput.user_name} registered!"}
     return result
 
 
@@ -96,14 +123,17 @@ def log_in(db: Annotated[Session, Depends(getdb)], clsinput: login_inputs):
         db=db)
 
     if result is None:
-        token = create_token(username, email)
-        return {"Msg": "Logged In!",
+        user = db.query(Users).filter(Users.user_name == username).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="Invalid login credentials")
+        token = create_token(user.user_name, user.email)
+        return {"message": "Logged In!",
                 "token": token}
     return result
 
 
 @router.get('/user/profile')
-def getUser(token: str, db: Annotated[Session, Depends(getdb)]):
+def getUser(db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -116,9 +146,9 @@ def getUser(token: str, db: Annotated[Session, Depends(getdb)]):
 
 @router.put('/user/profile/update')
 def updateUser(
-    token: str,
     db: Annotated[Session, Depends(getdb)],
-    clsinput: user_update_inputs
+    clsinput: user_update_inputs,
+    token: str = Depends(get_token_from_header)
 ):
     user = get_current_user(token=token, db=db)
 
@@ -132,10 +162,10 @@ def updateUser(
         ).first()
 
         if existing_user:
-            return {"msg": "Username already taken"}
+            return {"message": "Username already taken"}
 
         if not validate_username(clsinput.user_name):
-            return {"msg": "Invalid username"}
+            return {"message": "Invalid username"}
 
         user.user_name = clsinput.user_name
 
@@ -147,7 +177,7 @@ def updateUser(
 
     if clsinput.contact is not None:
         if not validate_contact(clsinput.contact):
-            return {"msg": "Invalid contact"}
+            return {"message": "Invalid contact"}
 
         user.contact = clsinput.contact
 
@@ -157,15 +187,15 @@ def updateUser(
     db.commit()
     db.refresh(user)
 
-    return {"msg": "User updated successfully"}
+    return {"message": "User updated successfully"}
 
 
 # |--------------------------------Addresses API's------------------------------------|
 
 
 @router.post('/add/address')
-def add_address(token: str, db: Annotated[Session, Depends(
-        getdb)], clsinput: address_inputs):
+def add_address(db: Annotated[Session, Depends(
+        getdb)], clsinput: address_inputs, token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -182,19 +212,19 @@ def add_address(token: str, db: Annotated[Session, Depends(
         landmark=clsinput.landmark
     )
     if not clsinput.Country in countryList.keys():
-        return {"Msg": "Enter a valid Country name"}
+        return {"message": "Enter a valid Country name"}
 
     if not clsinput.State in countryList[clsinput.Country]:
-        return {"Msg": "Enetr a valid State name"}
+        return {"message": "Enetr a valid State name"}
 
     db.add(user_inputs)
     db.commit()
     db.refresh(user_inputs)
-    return {"Msg": "Address added!"}
+    return {"message": "Address added!"}
 
 
 @router.get('/get/addresses')
-def get_address(token: str, db: Annotated[Session, Depends(getdb)]):
+def get_address(db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -207,10 +237,10 @@ def get_address(token: str, db: Annotated[Session, Depends(getdb)]):
 
 @router.put('/update/address/{id}')
 def updateAddress(
-    token: str,
     id: int,
+    clsinput: address_update,
     db: Annotated[Session, Depends(getdb)],
-    clsinput: address_update
+    token: str = Depends(get_token_from_header)
 ):
     user = get_current_user(token=token, db=db)
     if not user:
@@ -222,11 +252,11 @@ def updateAddress(
     ).first()
 
     if not address:
-        return {"msg": "Address not found"}
+        return {"message": "Address not found"}
 
     if clsinput.Country is not None:
         if clsinput.Country not in countryList:
-            return {"msg": "Invalid country"}
+            return {"message": "Invalid country"}
 
         address.country = clsinput.Country
 
@@ -234,10 +264,10 @@ def updateAddress(
         country = clsinput.Country or address.country
 
         if country not in countryList:
-            return {"msg": "Invalid country"}
+            return {"message": "Invalid country"}
 
         if clsinput.State not in countryList[country]:
-            return {"msg": "Invalid state"}
+            return {"message": "Invalid state"}
 
         address.state = clsinput.State
 
@@ -265,11 +295,11 @@ def updateAddress(
     db.commit()
     db.refresh(address)
 
-    return {"msg": "Address updated"}
+    return {"message": "Address updated"}
 
 
 @router.put('/remove/address/{id}')
-def deleteAddress(token: str, id: int, db: Annotated[Session, Depends(getdb)]):
+def deleteAddress(id: int, db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="USer not Found")
@@ -278,7 +308,7 @@ def deleteAddress(token: str, id: int, db: Annotated[Session, Depends(getdb)]):
     if address:
         address.is_deleted = True
     db.commit()
-    return {"Msg": "Address removed"}
+    return {"message": "Address removed"}
 
 
 # |-----------------------------Categories API's--------------------------------|
@@ -297,9 +327,9 @@ def addCategories(db: Annotated[Session, Depends(
         db.add(categoryInput)
         db.commit()
         db.refresh(categoryInput)
-        return {"msg": "Category Added"}
+        return {"message": "Category Added"}
     else:
-        return {"msg": "category already exsist"}
+        return {"message": "category already exsist"}
 
 
 @router.post('/add/subcategories')
@@ -308,7 +338,7 @@ def addSubcategory(db: Annotated[Session, Depends(
     category_id = db.query(Categories).filter(
         Categories.name == clsinput.parentName).first()
     if category_id is None:
-        return {"msg": 'Enter a valid Category Name'}
+        return {"message": 'Enter a valid Category Name'}
 
     subCategoryinput = Sub_Categories(
         name=clsinput.name,
@@ -320,18 +350,43 @@ def addSubcategory(db: Annotated[Session, Depends(
         db.query(Sub_Categories).filter(
             Sub_Categories.name == clsinput.name).first())
     if alreadyExistsub:
-        return {"Msg": "Sub category already exsist"}
+        return {"message": "Sub category already exsist"}
     else:
         db.add(subCategoryinput)
         db.commit()
         db.refresh(subCategoryinput)
-        return {"Msg": "Subcategory and Category added"}
+        return {"message": "Subcategory and Category added"}
 
 
-#  |---------------------------------Product Stock Unit API's------------------------|
+#  |-------------------------------Product API's------------------------------------
+
+
+@router.get("/products/category/{category_name}")
+def getProductsByCategory(
+    category_name: str,
+    request: Request,
+    db: Annotated[Session, Depends(getdb)]
+):
+    category = db.query(Categories).filter(
+        Categories.name == category_name
+    ).first()
+
+    if not category:
+        return {"message": "Category not found"}
+
+    products = db.query(Products).filter(
+        Products.category_id == category.id,
+        Products.is_deleted == False
+    ).all()
+
+    return {"data": [serialize_product(product, request) for product in products]}
+
+
+# |----------------------------------Admin Product API's-------------------------------|
+
 
 @router.post("/stock/add")
-def addStock(token: str, db: Annotated[Session, Depends(getdb)], clsinput: stock_inputs):
+def addStock(db: Annotated[Session, Depends(getdb)], clsinput: stock_inputs, token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -347,15 +402,14 @@ def addStock(token: str, db: Annotated[Session, Depends(getdb)], clsinput: stock
     ).first()
     
     if not product:
-        return {"msg": "Product not found"}
+        return {"message": "Product not found"}
     
-    # Check if SKU already exists
     existing_sku = db.query(Product_Stock).filter(
         Product_Stock.sku_id == clsinput.sku_id
     ).first()
     
     if existing_sku:
-        return {"msg": "SKU already exists"}
+        return {"message": "SKU already exists"}
     
     stock = Product_Stock(
         product_id=clsinput.product_id,
@@ -368,15 +422,15 @@ def addStock(token: str, db: Annotated[Session, Depends(getdb)], clsinput: stock
     db.commit()
     db.refresh(stock)
     
-    return {"msg": "Stock added successfully", "stock_id": stock.id}
+    return {"message": "Stock added successfully", "stock_id": stock.id}
 
 
 @router.put("/stock/update/{product_stock_id}")
 def updateStock(
     product_stock_id: int,
-    token: str,
     db: Annotated[Session, Depends(getdb)],
-    clsinput: stock_update_inputs
+    clsinput: stock_update_inputs,
+    token: str = Depends(get_token_from_header)
 ):
     user = get_current_user(token=token, db=db)
     if not user:
@@ -393,7 +447,7 @@ def updateStock(
     ).first()
     
     if not stock:
-        return {"msg": "Stock not found"}
+        return {"message": "Stock not found"}
     
     if clsinput.sku_id is not None:
         existing_sku = db.query(Product_Stock).filter(
@@ -404,7 +458,7 @@ def updateStock(
         ).first()
         
         if existing_sku:
-            return {"msg": "SKU already exists"}
+            return {"message": "SKU already exists"}
         
         stock.sku_id = clsinput.sku_id
     
@@ -417,11 +471,11 @@ def updateStock(
     db.commit()
     db.refresh(stock)
     
-    return {"msg": "Stock updated successfully"}
+    return {"message": "Stock updated successfully"}
 
 
 @router.get("/stock/get/{product_id}")
-def getStock(product_id: int,token:str, db: Annotated[Session, Depends(getdb)]):
+def getStock(product_id: int, db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -436,7 +490,7 @@ def getStock(product_id: int,token:str, db: Annotated[Session, Depends(getdb)]):
     ).first()
     
     if not product:
-        return {"msg": "Product not found"}
+        return {"message": "Product not found"}
     
     stocks = db.query(Product_Stock).filter(
         and_(
@@ -449,7 +503,7 @@ def getStock(product_id: int,token:str, db: Annotated[Session, Depends(getdb)]):
 
 
 @router.put("/stock/remove/{product_stock_id}")
-def deleteStock(product_stock_id: int, token: str, db: Annotated[Session, Depends(getdb)]):
+def deleteStock(product_stock_id: int, db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -465,22 +519,19 @@ def deleteStock(product_stock_id: int, token: str, db: Annotated[Session, Depend
     ).first()
     
     if not stock:
-        return {"msg": "Stock not found"}
+        return {"message": "Stock not found"}
     
     stock.is_deleted = True
     db.commit()
     
-    return {"msg": "Stock deleted successfully"}
-
-
-
-# |-------------------------------Product API's------------------------------------|
+    return {"message": "Stock deleted successfully"}
 
 
 @router.post("/add/products")
 async def addProducts(
-    token: str,
+    request: Request,
     db: Annotated[Session, Depends(getdb)],
+    token: str = Depends(get_token_from_header),
     name: str = Form(...),
     description: str = Form(...),
     summary: str = Form(...),
@@ -493,9 +544,6 @@ async def addProducts(
     hero_image_4: UploadFile = File(...)
 ):
     user = get_current_user(token=token, db=db)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not Found")
-    
     if user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Only admins can add products")
     
@@ -562,8 +610,10 @@ async def addProducts(
         db.refresh(product)
 
         return {
-            "msg": "Product added successfully",
-            "product_id": product.id
+            "message": "Product added successfully",
+            "product_id": product.id,
+            "cover_image_url": build_image_url(product.cover_img_path, request) if product.cover_img_path else None,
+            "hero_image_urls": {key: build_image_url(path, request) for key, path in (product.hero_path or {}).items()}
         }
     
     except HTTPException:
@@ -579,7 +629,9 @@ async def addProducts(
 @router.put("/update/products/{id}")
 async def updateProducts(
     id: int,
+    request: Request,
     db: Annotated[Session, Depends(getdb)],
+    token: str = Depends(get_token_from_header),
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     summary: Optional[str] = Form(None),
@@ -591,6 +643,9 @@ async def updateProducts(
     hero_image_3: Optional[UploadFile] = File(None),
     hero_image_4: Optional[UploadFile] = File(None)
 ):
+    user = get_current_user(token=token, db=db)
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can update products")
     try:
         product = db.query(Products).filter(
             Products.id == id,
@@ -635,7 +690,7 @@ async def updateProducts(
                 cover_content
             )
 
-        product.cover_img_path = str(
+            product.cover_img_path = str(
                 result["FilePath"]
             )
 
@@ -676,7 +731,12 @@ async def updateProducts(
         db.commit()
         db.refresh(product)
 
-        return {"msg": "Product updated successfully"}
+        return {
+            "message": "Product updated successfully",
+            "product_id": product.id,
+            "cover_image_url": build_image_url(product.cover_img_path, request) if product.cover_img_path else None,
+            "hero_image_urls": {key: build_image_url(path, request) for key, path in (product.hero_path or {}).items()}
+        }
     
     except HTTPException:
         raise
@@ -691,82 +751,77 @@ async def updateProducts(
 @router.put("/removeProduct/{id}")
 def removeProduct(
     id: int,
-    db: Annotated[Session, Depends(getdb)]
+    db: Annotated[Session, Depends(getdb)],
+    token: str = Depends(get_token_from_header)
 ):
+    user = get_current_user(token=token, db=db)
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can remove products")
+
     product = db.query(Products).filter(
         Products.id == id,
         Products.is_deleted == False
     ).first()
 
     if not product:
-        return {"msg": "Product not found"}
+        return {"message": "Product not found"}
 
     product.is_deleted = True
 
     db.commit()
     db.refresh(product)
 
-    return {"msg": "Product removed"}
-
-
-@router.get("/products/category/{category_name}")
-def getProductsByCategory(
-    category_name: str,
-    db: Annotated[Session, Depends(getdb)]
-):
-    category = db.query(Categories).filter(
-        Categories.name == category_name
-    ).first()
-
-    if not category:
-        return {"msg": "Category not found"}
-
-    products = db.query(Products).filter(
-        Products.category_id == category.id,
-        Products.is_deleted == False
-    ).all()
-
-    return {"data": products}
-
-
-# |----------------------------------Admin Product API's-------------------------------|
+    return {"message": "Product removed"}
 
 
 @router.get("/admin/get/products")
 def getProducts(
+    request: Request,
     db: Annotated[Session, Depends(getdb)],
+    token: str = Depends(get_token_from_header),
     skip: int = 0,
     limit: int = 10
 ):
+    user = get_current_user(token=token, db=db)
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can view products")
+
     products = db.query(Products).filter(
         Products.is_deleted == False
     ).offset(skip).limit(limit).all()
 
-    return {"data": products}
+    return {"data": [serialize_product(product, request) for product in products]}
 
 
 @router.get("/admin/get/productDetails/{id}")
 def getProductDetails(
     id: int,
-    db: Annotated[Session, Depends(getdb)]
+    request: Request,
+    db: Annotated[Session, Depends(getdb)],
+    token: str = Depends(get_token_from_header)
 ):
+    user = get_current_user(token=token, db=db)
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can view product details")
+
     product = db.query(Products).filter(
         Products.id == id,
         Products.is_deleted == False
     ).first()
 
     if not product:
-        return {"msg": "Product not found"}
+        return {"message": "Product not found"}
 
-    return {"data": product}
+    return {"data": serialize_product(product, request)}
 
 
 # |-------------------------------------------Cart API's---------------------------------|
 
 
 @router.post("/cart/add/{product_id}")
-def addToCart(token: str, product_id: int, quantity: int,
-              db: Annotated[Session, Depends(getdb)], clsinput: addToCartInputs):
+def addToCart(product_id: int, quantity: int,
+              db: Annotated[Session, Depends(getdb)], clsinput: addToCartInputs,
+              token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -779,10 +834,10 @@ def addToCart(token: str, product_id: int, quantity: int,
             Product_Stock.product_id == product_id,
             Product_Stock.is_deleted == False)).first()
     if not product:
-        return {"Msg": "Product not found"}
+        return {"message": "Product not found"}
     
     if not product_stock:
-        return {"Msg": "Product stock not found"}
+        return {"message": "Product stock not found"}
 
     cart = db.query(Cart).filter(Cart.user_id == user.id).first()
     if not cart:
@@ -805,11 +860,11 @@ def addToCart(token: str, product_id: int, quantity: int,
     db.add(cart_item)
     db.commit()
     db.refresh(cart_item)
-    return {"Msg": "Product added to cart!"}
+    return {"message": "Product added to cart!"}
 
 
 @router.get('/cart/get')
-def getCart(token: str, db: Annotated[Session, Depends(getdb)]):
+def getCart(db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -819,12 +874,13 @@ def getCart(token: str, db: Annotated[Session, Depends(getdb)]):
             Cart_Item.is_deleted == False,
             Cart_Item.cart_id == cart.id)).all()
     return {"items": cart_Items,
-            "Total:":cart.total}
+            "total":cart.total}
 
 
 @router.put('/cart/update/{cart_item_id}')
-def cartUpdate(cart_item_id: int, token: str,
-               db: Annotated[Session, Depends(getdb)], quantity: int = Form(...)):
+def cartUpdate(cart_item_id: int,
+               db: Annotated[Session, Depends(getdb)], quantity: int = Form(...),
+               token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -845,12 +901,13 @@ def cartUpdate(cart_item_id: int, token: str,
         item.quantity *
         item.productStock.price for item in items)
     db.commit()
-    return {"Msg": "Cart updated",
-            "Cart Total :": cart.total}
+    return {"message": "Cart updated",
+            "cart_total": cart.total}
 
 @router.put("/CartItem/remove/{cart_item_id}")
-def removeItem(cart_item_id: int, token: str,
-               db: Annotated[Session, Depends(getdb)]):
+def removeItem(cart_item_id: int,
+               db: Annotated[Session, Depends(getdb)],
+               token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -867,13 +924,13 @@ def removeItem(cart_item_id: int, token: str,
     return {'Msg':"Item removed"}
 
 @router.put("/cart/clear")
-def clearCart(token:str,db: Annotated[Session, Depends(getdb)]):
+def clearCart(db: Annotated[Session, Depends(getdb)], token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
     cart = db.query(Cart).filter(Cart.user_id == user.id).first()    
     if not cart:
-        return {"Msg":"Cart not found"}    
+        return {"message":"Cart not found"}    
     cart_Items = db.query(Cart_Item).filter(
         and_(
             Cart_Item.is_deleted == False,
@@ -882,12 +939,13 @@ def clearCart(token:str,db: Annotated[Session, Depends(getdb)]):
         cart_item.is_deleted=True
     cart.total=0
     db.commit()
-    return {"Msg":"Cart cleared!"}
+    return {"message":"Cart cleared!"}
 
 # |--------------------------------Order API's------------------------------------|
 
 @router.post("/order/create")
-def createOrder(token: str, db: Annotated[Session, Depends(getdb)], clsinput: order_create_inputs):
+def createOrder(db: Annotated[Session, Depends(getdb)], clsinput: order_create_inputs,
+                token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -901,11 +959,11 @@ def createOrder(token: str, db: Annotated[Session, Depends(getdb)], clsinput: or
     ).first()
     
     if not address:
-        return {"msg": "Address not found"}
+        return {"message": "Address not found"}
     
     cart = db.query(Cart).filter(Cart.user_id == user.id).first()
     if not cart:
-        return {"msg": "Cart is empty"}
+        return {"message": "Cart is empty"}
     
     cart_items = db.query(Cart_Item).filter(
         and_(
@@ -915,14 +973,14 @@ def createOrder(token: str, db: Annotated[Session, Depends(getdb)], clsinput: or
     ).all()
     
     if not cart_items:
-        return {"msg": "No items in cart"}
+        return {"message": "No items in cart"}
     
     for item in cart_items:
         stock = db.query(Product_Stock).filter(
             Product_Stock.id == item.product_stock_id
         ).first()
         if not stock or stock.quantity < item.quantity:
-            return {"msg": f"Insufficient stock for product {item.product.name}"}
+            return {"message": f"Insufficient stock for product {item.product.name}"}
     
     order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
     total_amount = cart.total
@@ -971,7 +1029,8 @@ def createOrder(token: str, db: Annotated[Session, Depends(getdb)], clsinput: or
 
 
 @router.get("/order/list")
-def getUserOrders(token: str, db: Annotated[Session, Depends(getdb)], skip: int = 0, limit: int = 10):
+def getUserOrders(db: Annotated[Session, Depends(getdb)], skip: int = 0, limit: int = 10,
+                  token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -998,7 +1057,8 @@ def getUserOrders(token: str, db: Annotated[Session, Depends(getdb)], skip: int 
 
 
 @router.get("/order/{order_id}")
-def getOrderDetails(order_id: int, token: str, db: Annotated[Session, Depends(getdb)]):
+def getOrderDetails(order_id: int, db: Annotated[Session, Depends(getdb)],
+                    token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -1012,7 +1072,7 @@ def getOrderDetails(order_id: int, token: str, db: Annotated[Session, Depends(ge
     ).first()
     
     if not order:
-        return {"msg": "Order not found"}
+        return {"message": "Order not found"}
     
     order_items = db.query(Order_Items).filter(
         and_(
@@ -1057,7 +1117,9 @@ def getOrderDetails(order_id: int, token: str, db: Annotated[Session, Depends(ge
 
 
 @router.put("/order/{order_id}/status")
-def updateOrderStatus(order_id: int, token: str, db: Annotated[Session, Depends(getdb)], clsinput: order_status_update_inputs):
+def updateOrderStatus(order_id: int, db: Annotated[Session, Depends(getdb)],
+                      clsinput: order_status_update_inputs,
+                      token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -1073,11 +1135,11 @@ def updateOrderStatus(order_id: int, token: str, db: Annotated[Session, Depends(
     ).first()
     
     if not order:
-        return {"msg": "Order not found"}
+        return {"message": "Order not found"}
     
     valid_statuses = ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELED"]
     if clsinput.status not in valid_statuses:
-        return {"msg": f"Invalid status. Valid statuses are: {', '.join(valid_statuses)}"}
+        return {"message": f"Invalid status. Valid statuses are: {', '.join(valid_statuses)}"}
     
     order.status = clsinput.status
     
@@ -1104,7 +1166,9 @@ def updateOrderStatus(order_id: int, token: str, db: Annotated[Session, Depends(
 
 
 @router.put("/order/{order_id}/cancel")
-def cancelOrder(order_id: int, token: str, db: Annotated[Session, Depends(getdb)], clsinput: order_cancel_inputs):
+def cancelOrder(order_id: int, db: Annotated[Session, Depends(getdb)],
+                 clsinput: order_cancel_inputs,
+                 token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -1118,10 +1182,10 @@ def cancelOrder(order_id: int, token: str, db: Annotated[Session, Depends(getdb)
     ).first()
     
     if not order:
-        return {"msg": "Order not found"}
+        return {"message": "Order not found"}
     
     if order.status not in ["PENDING", "PROCESSING"]:
-        return {"msg": f"Cannot cancel order with status {order.status}"}
+        return {"message": f"Cannot cancel order with status {order.status}"}
     
     order_items = db.query(Order_Items).filter(
         and_(
@@ -1153,7 +1217,8 @@ def cancelOrder(order_id: int, token: str, db: Annotated[Session, Depends(getdb)
     }
 
 @router.get("/order/get/{status}")
-def get_order_with_status(status:str,token: str, db: Annotated[Session, Depends(getdb)]):
+def get_order_with_status(status: str, db: Annotated[Session, Depends(getdb)],
+                          token: str = Depends(get_token_from_header)):
     user = get_current_user(token=token, db=db)
     if not user:
         raise HTTPException(status_code=404, detail="User not Found")
@@ -1167,7 +1232,7 @@ def get_order_with_status(status:str,token: str, db: Annotated[Session, Depends(
     ).all()
 
     if not order:
-        return {"msg": "Order not found"}
+        return {"message": "Order not found"}
     
     return{"Orders":order}
     
