@@ -5,7 +5,7 @@ from pathlib import Path
 
 import bcrypt
 from email_validator import EmailNotValidError, validate_email
-from fastapi import HTTPException, UploadFile
+from fastapi import Depends, Header, HTTPException, UploadFile
 from PIL import Image, ImageOps
 from sqlalchemy import and_, or_
 
@@ -277,7 +277,17 @@ def validate_image_file(file: UploadFile):
         )
 
 
-def get_current_user(token: str, db):
+def get_token_from_header(authorization: str | None = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authorization header must use Bearer token")
+
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user(token: str = Depends(get_token_from_header), db=Depends(getdb)):
     try:
         info = verify_token(token=token)
         email = info["sub"].split("+")[1]
@@ -287,6 +297,9 @@ def get_current_user(token: str, db):
             .filter(and_(Users.email == email, Users.is_deleted == False))
             .first()
         )
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         return user
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
