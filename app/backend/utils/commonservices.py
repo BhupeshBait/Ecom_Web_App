@@ -101,7 +101,6 @@ def complete_registration(
     if not adv_validation(email):
         return "Enter a valid email!"
 
-    user = db.query(Users).filter(Users.user_name == username).first()
 
     user_check = check_user_exists(email, username, db)
     if user_check:

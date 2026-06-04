@@ -16,7 +16,6 @@ class Timestampmixin:
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     CUSTOMER = "customer"
-    VENDOR = "vendor"
 
 
 class OrderStatus(str, enum.Enum):
@@ -42,12 +41,12 @@ class Users(base, Timestampmixin):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    first_name = Column(String)
-    last_name = Column(String)
-    user_name = Column(String, nullable=False, unique=True, index=True)
-    email = Column(String, nullable=False, unique=True, index=True)
-    contact = Column(String)
-    hash_password = Column(String, nullable=False)
+    first_name = Column(String(250))
+    last_name = Column(String(250))
+    user_name = Column(String(250), nullable=False, unique=True, index=True)
+    email = Column(String(250), nullable=False, unique=True, index=True)
+    contact = Column(String(250))
+    hash_password = Column(String(250), nullable=False)
     DOB = Column(Date)
     role = Column(Enum(UserRole), default=UserRole.CUSTOMER)
 
@@ -62,15 +61,15 @@ class Addresses(base, Timestampmixin):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    address_line_1 = Column(String)
-    address_line_2 = Column(String)
-    district = Column(String)
-    street = Column(String)
-    city = Column(String)
-    landmark = Column(String)
-    state = Column(String)
-    country = Column(String)
-    postal_code = Column(String)
+    address_line_1 = Column(String(250))
+    address_line_2 = Column(String(250))
+    district = Column(String(250))
+    street = Column(String(250))
+    city = Column(String(250))
+    landmark = Column(String(250))
+    state = Column(String(250))
+    country = Column(String(250))
+    postal_code = Column(String(250))
 
     user = relationship("Users", back_populates="addresses")
     orders = relationship("Orders", back_populates="shipping_address")
@@ -80,8 +79,8 @@ class Categories(base, Timestampmixin):
     __tablename__ = "categories"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    description = Column(String)
+    name = Column(String(250), nullable=False)
+    description = Column(String(250))
 
     subCategory = relationship("Sub_Categories", back_populates="category")
     products = relationship("Products", back_populates="category")
@@ -92,8 +91,8 @@ class Sub_Categories(base, Timestampmixin):
 
     id = Column(Integer, primary_key=True, index=True)
     parent_id = Column(Integer, ForeignKey("categories.id"))
-    name = Column(String, nullable=False)
-    description = Column(String)
+    name = Column(String(250), nullable=False)
+    description = Column(String(250))
 
     category = relationship("Categories", back_populates="subCategory")
     product = relationship("Products", back_populates="subCategory")
@@ -103,12 +102,12 @@ class Products(base, Timestampmixin):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    name = Column(String(250), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"))
     hero_path = Column(JSON)
-    cover_img_path = Column(String)
-    summary = Column(String)
-    description = Column(String)
+    cover_img_path = Column(String(250))
+    summary = Column(String(250))
+    description = Column(String(250))
     sub_category_id = Column(Integer, ForeignKey("sub_categories.id"))
 
     category = relationship("Categories", back_populates="products")
@@ -128,7 +127,7 @@ class Product_Attribute(base, Timestampmixin):
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"))
     type = Column(Enum(ProductAttributeType))
-    value = Column(String)
+    value = Column(String(250))
 
     product = relationship("Products", back_populates="productAttribute")
 
@@ -137,7 +136,7 @@ class Product_Stock(base, Timestampmixin):
     __tablename__ = "product_stock"
 
     id = Column(Integer, primary_key=True, index=True)
-    sku_id = Column(String, unique=True, nullable=False)
+    sku_id = Column(String(250), unique=True, nullable=False)
     price = Column(Float, nullable=False)
     quantity = Column(Integer, nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"))
@@ -178,16 +177,16 @@ class Orders(base, Timestampmixin):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    order_number = Column(String, unique=True, nullable=False, index=True)
+    order_number = Column(String(250), unique=True, nullable=False, index=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING)
-    reason=Column(String,nullable=True)
+    reason=Column(String(250),nullable=True)
     total_amount = Column(Float, nullable=False)
     shipping_charge = Column(Float, default=0)
     tax_amount = Column(Float, default=0)
     discount_amount = Column(Float, default=0)
     final_amount = Column(Float, nullable=False)
     shipping_address_id = Column(Integer, ForeignKey("addresses.id"))
-    tracking_number = Column(String, nullable=True)
+    tracking_number = Column(String(250), nullable=True)
 
     user = relationship("Users", back_populates="orders")
     shipping_address = relationship("Addresses", back_populates="orders")
@@ -218,10 +217,10 @@ class Payments(base, Timestampmixin):
 
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
-    payment_id = Column(String, unique=True)
-    transaction_id = Column(String)
-    payment_gateway = Column(String)
-    payment_method = Column(String)
+    payment_id = Column(String(250), unique=True)
+    transaction_id = Column(String(250))
+    payment_gateway = Column(String(250))
+    payment_method = Column(String(250))
     amount = Column(Float, nullable=False)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.INITIATED)
 
@@ -235,7 +234,7 @@ class Reviews(base, Timestampmixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     rating = Column(Integer, nullable=False)
-    comment = Column(String)
+    comment = Column(String(250))
 
     user = relationship("Users", back_populates="reviews")
     product = relationship("Products", back_populates="reviews")
