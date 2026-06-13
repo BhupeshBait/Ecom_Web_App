@@ -1,7 +1,7 @@
 import enum
 
 from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Enum, Float,
-                        ForeignKey, Integer, String, UniqueConstraint, func)
+                        ForeignKey, Integer, String, UniqueConstraint, func, Text)
 from sqlalchemy.orm import relationship
 
 from database.database import base
@@ -24,6 +24,7 @@ class OrderStatus(str, enum.Enum):
     SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELED = "canceled"
+    INITIATED = "initiated"
 
 
 class PaymentStatus(str, enum.Enum):
@@ -81,6 +82,12 @@ class Categories(base, Timestampmixin):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(250), nullable=False)
     description = Column(String(250))
+    slug = Column(
+        String(250),
+        unique=True,
+        index=True,
+        nullable=True
+    )
 
     subCategory = relationship("Sub_Categories", back_populates="category")
     products = relationship("Products", back_populates="category")
@@ -93,6 +100,12 @@ class Sub_Categories(base, Timestampmixin):
     parent_id = Column(Integer, ForeignKey("categories.id"))
     name = Column(String(250), nullable=False)
     description = Column(String(250))
+    slug = Column(
+        String(250),
+        unique=True,
+        index=True,
+        nullable=True
+    )
 
     category = relationship("Categories", back_populates="subCategory")
     product = relationship("Products", back_populates="subCategory")
@@ -107,7 +120,18 @@ class Products(base, Timestampmixin):
     hero_path = Column(JSON)
     cover_img_path = Column(String(250))
     summary = Column(String(250))
-    description = Column(String(250))
+    description = Column(Text)
+    is_featured = Column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+    slug = Column(
+        String(250),
+        unique=True,
+        index=True,
+        nullable=True
+    )
     sub_category_id = Column(Integer, ForeignKey("sub_categories.id"))
 
     category = relationship("Categories", back_populates="products")
@@ -136,14 +160,42 @@ class Product_Stock(base, Timestampmixin):
     __tablename__ = "product_stock"
 
     id = Column(Integer, primary_key=True, index=True)
-    sku_id = Column(String(250), unique=True, nullable=False)
-    price = Column(Float, nullable=False)
-    quantity = Column(Integer, nullable=False)
-    product_id = Column(Integer, ForeignKey("products.id"))
 
-    product = relationship("Products", back_populates="stock")
-    cartItem = relationship("Cart_Item", back_populates="productStock")
-    orderItems = relationship("Order_Items", back_populates="productStock")
+    sku_id = Column(
+        String(250),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+    price = Column(Float, nullable=False)
+
+    quantity = Column(
+        Integer,
+        nullable=False,
+        default=0
+    )
+
+    product_id = Column(
+        Integer,
+        ForeignKey("products.id"),
+        nullable=False
+    )
+
+    product = relationship(
+        "Products",
+        back_populates="stock"
+    )
+
+    cartItem = relationship(
+        "Cart_Item",
+        back_populates="productStock"
+    )
+
+    orderItems = relationship(
+        "Order_Items",
+        back_populates="productStock"
+    )
 
 
 
@@ -190,7 +242,7 @@ class Orders(base, Timestampmixin):
 
     user = relationship("Users", back_populates="orders")
     shipping_address = relationship("Addresses", back_populates="orders")
-    orderItems = relationship("Order_Items", back_populates="order")
+    orderItems = relationship("Order_Items", back_populates="order",cascade="all, delete-orphan")
     payment = relationship("Payments", back_populates="order", uselist=False)
 
 
@@ -223,12 +275,25 @@ class Payments(base, Timestampmixin):
     payment_method = Column(String(250))
     amount = Column(Float, nullable=False)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.INITIATED)
+    payment_reference = Column(
+        String(250),
+        unique=True
+    )
+    gateway_response = Column(JSON)
+    paid_at = Column(DateTime(timezone=True))
 
     order = relationship("Orders", back_populates="payment")
 
 
 class Reviews(base, Timestampmixin):
     __tablename__ = "reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "product_id",
+            name="unique_user_product_review"
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -238,3 +303,32 @@ class Reviews(base, Timestampmixin):
 
     user = relationship("Users", back_populates="reviews")
     product = relationship("Products", back_populates="reviews")
+
+
+class Wishlist(base, Timestampmixin):
+    __tablename__ = "wishlist"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    __table_args__ = (
+            UniqueConstraint(
+                "user_id",
+                "product_id",
+                name="unique_user_wishlist"
+            ),
+        )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    product_id = Column(
+        Integer,
+        ForeignKey("products.id"),
+        nullable=False
+    )
+
+    user = relationship("Users")
+    product = relationship("Products")
