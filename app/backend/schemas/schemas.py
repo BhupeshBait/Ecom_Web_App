@@ -55,12 +55,13 @@ class address_update(BaseModel):
 class categoryInputs(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., max_length=500)
-
+    slug: str | None = None
 
 class SubcategoryInputs(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., max_length=500)
     parentName: str = Field(..., min_length=1, max_length=100)
+    slug: str | None = None
 
 
 class addToCartInputs(BaseModel):
@@ -70,14 +71,14 @@ class addToCartInputs(BaseModel):
 class stock_inputs(BaseModel):
     product_id: int
     sku_id: str
-    price: float
-    quantity: int
+    price: float = Field(..., gt=0)
+    quantity: int = Field(..., ge=0)
 
 
 class stock_update_inputs(BaseModel):
     sku_id: str | None = None
-    price: float | None = None
-    quantity: int | None = None
+    price: float | None = Field(None, gt=0)
+    quantity: int | None = Field(None, ge=0)
 
 
 class order_create_inputs(BaseModel):
@@ -92,3 +93,36 @@ class order_status_update_inputs(BaseModel):
 
 class order_cancel_inputs(BaseModel):
     reason: str | None = None
+
+
+class categoryUpdateInputs(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    slug: str | None = None
+
+
+class subcategoryUpdateInputs(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    slug: str | None = None
+    parentName: str | None = None
+
+
+class review_create_inputs(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    comment: str | None = Field(None, max_length=500)
+
+
+class review_update_inputs(BaseModel):
+    rating: int | None = Field(None, ge=1, le=5)
+    comment: str | None = Field(None, max_length=500)
+
+class payment_create_inputs(BaseModel):
+    order_id: int
+    payment_method: str
+
+class payment_verify_inputs(BaseModel):
+    payment_reference: str
+
+class wishlist_inputs(BaseModel):
+    product_id: int
