@@ -2,7 +2,7 @@ import re
 import uuid
 from io import BytesIO
 from pathlib import Path
-
+# authentication helpers are provided by core.security
 import bcrypt
 from email_validator import EmailNotValidError, validate_email
 from fastapi import Depends, Header, HTTPException, UploadFile
@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_
 
 from database.database import local_session
 from models.models import Users
-from utils.token import verify_token
+
 
 cover_dir = Path("uploads/cover")
 hero_dir = Path("uploads/hero")
@@ -58,8 +58,6 @@ def check_user_exists(email: str | None,
     return None
 
 
-def hash_passwd(passwd):
-    return bcrypt.hashpw(passwd.encode(), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 
 def name_validation(name):
@@ -109,18 +107,6 @@ def complete_registration(
     return "Done"
 
 
-def verify_password(password: str, username: str, email: str, db):
-    if check_user_exists(email, username, db) is None:
-        return {"Msg": "Incorrect Username or email"}
-    result = db.query(Users).filter(Users.user_name == username).first()
-
-    if result is None:
-        return {"Msg": "Incorrect Username or email"}
-
-    hash_passwd = bcrypt.checkpw(password.encode(), result.hash_password.encode('utf-8'))
-    if hash_passwd:
-        return None
-    return {"Msg": "Incorrect Password!"}
 
 
 def process_images(content: bytes, type: str | None = None) -> dict:
@@ -276,29 +262,24 @@ def validate_image_file(file: UploadFile):
         )
 
 
-def get_token_from_header(authorization: str | None = Header(None)):
-    if authorization is None:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Authorization header must use Bearer token")
-
-    return authorization.split(" ", 1)[1]
 
 
-def get_current_user(token: str = Depends(get_token_from_header), db=Depends(getdb)):
-    try:
-        info = verify_token(token=token)
-        email = info["sub"].split("+")[1]
 
-        user = (
-            db.query(Users)
-            .filter(and_(Users.email == email, Users.is_deleted == False))
-            .first()
-        )
+from core.security import (
+    getdb as _getdb,
+    get_token_from_header,
+    get_current_user,
+    hash_passwd,
+    verify_password_hash,
+    create_access_token,
+    create_refresh_token,
+    require_admin,
+    require_customer,
+)
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+getdb = _getdb
+
+hash_passwd = hash_passwd
+verify_password = verify_password_hash
+create_access_token = create_access_token
+create_refresh_token = create_refresh_token
