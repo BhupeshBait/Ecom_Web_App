@@ -22,7 +22,7 @@ from schemas.schemas import (
 from utils.commonservices import getdb
 
 from core.security import require_admin
-from utils.logger import logger
+
 
 
 router = APIRouter(tags=["Stock"])
@@ -77,7 +77,6 @@ def add_stock(
         db.add(stock)
         db.commit()
         db.refresh(stock)
-        logger.info(f"stock.create: product_id={stock.product_id} sku={stock.sku_id} user_id={current_user.id}")
         return {
             "message": "Stock created",
             "data": serialize_stock(stock)
@@ -147,7 +146,6 @@ def update_stock(
     try:
         db.commit()
         db.refresh(stock)
-        logger.info(f"stock.update: stock_id={stock.id} user_id={current_user.id}")
         return {
             "message": "Stock updated",
             "data": serialize_stock(stock)
@@ -178,7 +176,6 @@ def delete_stock(
         stock.is_deleted = True
 
         db.commit()
-        logger.info(f"stock.delete: stock_id={stock.id} user_id={current_user.id}")
         return {
             "message": "Stock deleted"
         }
