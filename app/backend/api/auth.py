@@ -63,7 +63,7 @@ def log_in(db: Annotated[Session, Depends(getdb)], clsinput: login_inputs):
 
 
 @router.post('/auth/refresh')
-def refresh_token(refresh: dict = Body(...)):
+def refresh_token(db: Annotated[Session, Depends(getdb)],refresh: dict = Body(...)):
     token = refresh.get("refresh_token")
     if not token:
         raise HTTPException(status_code=400, detail="refresh_token required")
@@ -73,7 +73,6 @@ def refresh_token(refresh: dict = Body(...)):
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    db = next(getdb())
     try:
         user = db.query(Users).filter(Users.id == user_id, Users.is_deleted == False).first()
         if not user:
