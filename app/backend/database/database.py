@@ -5,7 +5,10 @@ from sqlalchemy.orm import sessionmaker
 from core.config import DATABASE_URL
 
 
-url = DATABASE_URL 
+if DATABASE_URL:
+    url = DATABASE_URL 
+else:
+    raise Exception("DATABASE_URL is not set in the environment variables.")
 
 engine = create_engine(
     url,

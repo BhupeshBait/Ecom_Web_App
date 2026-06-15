@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from models.models import Categories, Sub_Categories , Products
 
-from schemas.schemas import (
+from schemas.categorySchmas import (
     categoryInputs,
     SubcategoryInputs,
     categoryUpdateInputs,

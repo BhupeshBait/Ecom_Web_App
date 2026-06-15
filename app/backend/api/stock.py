@@ -14,7 +14,7 @@ from models.models import (
     Products
 )
 
-from schemas.schemas import (
+from schemas.stockSchemas import (
     stock_inputs,
     stock_update_inputs
 )

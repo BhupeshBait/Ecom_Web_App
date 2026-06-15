@@ -11,7 +11,7 @@ from models.models import (
     OrderStatus
 )
 
-from schemas.schemas import (
+from schemas.paymentSchemas import (
     payment_create_inputs,
     payment_verify_inputs
 )

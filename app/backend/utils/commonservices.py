@@ -2,7 +2,6 @@ import re
 import uuid
 from io import BytesIO
 from pathlib import Path
-# authentication helpers are provided by core.security
 import bcrypt
 from email_validator import EmailNotValidError, validate_email
 from fastapi import Depends, Header, HTTPException, UploadFile

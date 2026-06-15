@@ -2,7 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from models.models import Users
-from schemas.schemas import (login_inputs, registration_inputs)
+from schemas.authSchemas import (login_inputs, registration_inputs)
 from utils.commonservices import (complete_registration, getdb)
 from core import security
 
@@ -37,7 +37,7 @@ async def sign_in(db: Annotated[Session, Depends(getdb)], clsinput: registration
             return {"message": f"{clsinput.user_name} registered!"}
         except Exception as e:
             db.rollback()
-            raise
+            raise HTTPException(status_code=500, detail="Any unexpected error occurred while registering the user.")
     return result
 
 

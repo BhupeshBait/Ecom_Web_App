@@ -2,7 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models.models import  Users
-from schemas.schemas import user_update_inputs
+from schemas.userSchemas import user_update_inputs
 from utils.commonservices import ( getdb, validate_contact, validate_username)
 from core.security import (get_current_user)
 

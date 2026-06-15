@@ -5,7 +5,7 @@ from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from models.models import Reviews, Products
-from schemas.schemas import (
+from schemas.reviewSchemas import (
     review_create_inputs,
     review_update_inputs
 )

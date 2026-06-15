@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from models.models import (Addresses)
-from schemas.schemas import ( address_inputs, address_update
+from schemas.addressSchemas import ( address_inputs, address_update
                              )
 from utils.commonservices import  getdb
 from core.security import (get_current_user)

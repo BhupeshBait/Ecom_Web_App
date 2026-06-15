@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 import uuid
 from models.models import (Addresses, Cart, Cart_Item,
                            Product_Stock, Products,Orders, Order_Items, Payments,OrderStatus)
-from schemas.schemas import (order_create_inputs, order_status_update_inputs, order_cancel_inputs)
+from schemas.orderSchemas import (order_create_inputs, order_status_update_inputs, order_cancel_inputs)
 from utils.commonservices import (getdb)
 from core.security import (get_current_user,require_admin)
 

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from models.models import ( Cart, Cart_Item,Product_Stock, Products)
-from schemas.schemas import (addToCartInputs)
+from schemas.cartSchemas import (addToCartInputs)
 from utils.commonservices import  getdb
 from core.security import (get_current_user)
 
